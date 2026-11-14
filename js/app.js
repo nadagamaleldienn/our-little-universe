@@ -77,7 +77,7 @@ function showLogin(note = '') {
     ${local
       ? `<p>Who are you?</p><div class="row center"><button class="btn" data-who="her">I'm ${esc(DEFAULT_NAMES.her)}</button><button class="btn" data-who="him">I'm ${esc(DEFAULT_NAMES.him)}</button></div>
          <p class="note">Local demo mode: data stays in this browser. Open a second tab and pick the other person to see the two of you together.</p>`
-      : `<form id="mail"><label>Your email<input type="email" name="email" required autocomplete="email" placeholder="you@example.com"></label><button class="btn">Send me a magic link</button></form>`}
+      : `<form id="mail"><label>Your email<input type="email" name="email" required autocomplete="email" placeholder="you@example.com"></label><label>Password <span class="muted">(leave empty to get a magic link)</span><input type="password" name="password" autocomplete="current-password"></label><button class="btn">Sign in</button></form>`}
     <p class="note" role="status">${esc(note)}</p></main>`;
   root.onclick = async (e) => {
     const b = e.target.closest('[data-who]');
@@ -88,7 +88,12 @@ function showLogin(note = '') {
   const form = $('#mail', root);
   if (form) form.onsubmit = async (e) => {
     e.preventDefault();
-    try { await backend.auth.signIn(new FormData(form).get('email')); showLogin('Check your email for the link, then come back.'); } catch (err) { showLogin(err.message); }
+    const fd = new FormData(form);
+    try {
+      const r = await backend.auth.signIn(fd.get('email'), fd.get('password'));
+      if (r === 'signed-in') begin(await backend.auth.currentUser());
+      else showLogin('Check your email for the link. After signing in, set a password in Settings so you never need the link again.');
+    } catch (err) { showLogin(err.message); }
   };
 }
 
@@ -456,6 +461,7 @@ function openSettings() {
       <div class="row"><button type="button" class="btn" id="pinNote">Pin note</button><span class="pv-pinned" id="pinned" role="status"></span></div></section>
     <div class="pv-preview"><div class="lbl">How ${esc(S.otherName)} will see you</div><div class="pv-pm" id="pvMain"></div><div class="pv-ps" id="pvSub"></div></div>
     <p class="note">Notification choices live in the bell. This is where you decide how much to share.</p>
+    ${backend.auth.setPassword ? `<div class="row wrap pv-actions"><label style="flex:1;min-width:200px">Set a password (so you can sign in without the email link)<input type="password" id="sPw" autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></label><button type="button" class="btn" id="sPwSave">Save password</button></div>` : ''}
     <div class="row wrap pv-actions"><button type="button" class="btn ghost" id="sOut">Sign out</button><button type="button" class="btn danger" id="sDel">Delete my data</button><button class="btn" value="close">Done</button></div>
   </form>`;
   const q = (sel) => d.querySelector(sel);
@@ -481,6 +487,11 @@ function openSettings() {
       q('#noteText').value = '';
       q('#pinned').textContent = `Pinned at ${locName(loc)} ✦`;
     } catch (err) { toast(err.message); }
+  });
+  q('#sPwSave')?.addEventListener('click', async () => {
+    const pw = q('#sPw').value;
+    if (pw.length < 8) return toast('Use at least 8 characters');
+    try { await backend.auth.setPassword(pw); q('#sPw').value = ''; toast('Password saved. Next time, sign in with your email and password.'); } catch (err) { toast(err.message); }
   });
   q('#sOut').addEventListener('click', async () => { await backend.auth.signOut(); location.reload(); });
   q('#sDel').addEventListener('click', async () => {

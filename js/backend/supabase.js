@@ -34,8 +34,18 @@ export function createSupabaseBackend({ url, key }) {
   // ---------- auth ----------
   const auth = {
     mode: 'supabase',
-    async signIn(email) {
-      const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
+    async signIn(email, password) {
+      if (password) {
+        const { error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) throw new Error('That email and password did not match. Use the magic link once, then set a password in Settings.');
+        return 'signed-in';
+      }
+      const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: false } });
+      fail(error);
+      return 'link-sent';
+    },
+    async setPassword(password) {
+      const { error } = await sb.auth.updateUser({ password });
       fail(error);
     },
     async currentUser() { const m = await meRow(true); return m ? { id: m.id, email: m.email, who: m.who } : null; },
