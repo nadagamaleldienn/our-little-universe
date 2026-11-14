@@ -1,6 +1,6 @@
 // Supabase backend. Same interface as local.js (see index.js).
 // The anon key is public by design; Row Level Security in supabase/schema.sql is the protection.
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/+esm';
 import { defaultSettings, mergeDeep, PLANT_TYPES, defaultName } from '../util.js';
 import { freshGame, applyMove } from './xo-logic.js';
 
