@@ -81,7 +81,7 @@ export function mount(el, ctx) {
     const inSun = p.sunAt && Date.now() - p.sunAt < SUN_WINDOW_MS;
     const bt = BOARD_TYPE[p.type] || 'fern';
     const low = esc(p.label);
-    return `<article class="pl-card${inSun ? ' sun' : ''}">
+    return `<article class="pl-card${inSun ? ' pl-insun' : ''}">
       <div class="pl-top"><div class="pl-tag"><div class="pl-name">${esc(p.label)}</div><div class="lab pl-by">planted by ${esc(nameOf(p.by))}</div></div>${inSun ? '<span class="lab pl-sunbadge">In the sun</span>' : ''}</div>
       <div class="pl-scene" role="img" aria-label="${low}, ${STAGE_NAMES[stage].toLowerCase()}${thirsty ? ', a little thirsty' : ''}">
         <div class="pl-plant${thirsty ? ' thirsty' : ''}${flash.water === p.id ? ' perk' : ''}">${art(bt, stage)}</div>

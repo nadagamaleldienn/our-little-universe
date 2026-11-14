@@ -390,7 +390,7 @@ dialog.modal.small h2, dialog.modal p { color: var(--v10); }
 .pl-count { margin-top: 6px; }
 .pl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 16px; align-content: start; }
 .pl-card { box-sizing: border-box; padding: 14px 16px; border-radius: 20px; border: 1px solid rgba(220, 210, 247, .18); background: rgba(61, 44, 116, .4); display: flex; flex-direction: column; gap: 6px; box-shadow: 0 8px 24px rgba(14, 9, 30, .3); min-width: 0; }
-.pl-card.sun { border-color: rgba(255, 231, 154, .5); background: radial-gradient(circle at 50% 18%, rgba(255, 231, 154, .28), rgba(61, 44, 116, .4) 65%); }
+.pl-card.pl-insun { border-color: rgba(255, 231, 154, .5); background: radial-gradient(circle at 50% 18%, rgba(255, 231, 154, .28), rgba(61, 44, 116, .4) 65%); }
 .pl-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 40px; }
 .pl-tag { min-width: 0; }
 .pl-name { font: 600 18px var(--font-h); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
