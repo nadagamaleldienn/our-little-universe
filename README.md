@@ -53,14 +53,26 @@ Push the folder contents to a repo, then **Settings > Pages > Deploy from a bran
 
 ## Adding music
 
-1. Put your audio files in the `audio/` folder (mp3 works everywhere).
-2. List them in `audio/playlist.json`:
-   ```json
-   [{ "title": "Song name", "artist": "Artist", "src": "audio/my-song.mp3" }]
-   ```
-3. For the rain ambience, add `audio/rain.mp3` (a seamless loop works best).
+Songs play from YouTube (the official IFrame Player API, loaded only after you tap "Tap to start the sound"). YouTube Music links work too.
 
-The two example entries point to files that do not exist yet; the player shows a friendly message until you add them. Only add music you have the right to use. Nothing autoplays: tap "Tap to start the sound" first.
+**Add songs in the app:** open the sound panel (note icon), paste a YouTube, YouTube Music or playlist link into "Add a song" and press Add. The title is read from YouTube. Added songs are saved on that device (`localStorage`, key `olu.myTracks`) and can be removed with the x button.
+
+**Or edit `audio/playlist.json`** so every device gets the same songs:
+```json
+{
+  "tracks": [
+    { "title": "Song name", "artist": "Artist", "youtube": "https://music.youtube.com/watch?v=VIDEO_ID" },
+    { "youtubePlaylist": "https://www.youtube.com/playlist?list=PLAYLIST_ID" },
+    { "title": "Local file", "src": "audio/my-song.mp3" }
+  ],
+  "rain": { "youtube": "https://www.youtube.com/watch?v=VIDEO_ID" }
+}
+```
+`youtube` accepts a bare 11-character id or any watch, youtu.be, shorts, embed or music.youtube.com link. The playlist starts empty on purpose; the app shows "Paste a YouTube or YouTube Music link to add your first song".
+
+**Rain sound:** set `"rain"` in `audio/playlist.json` (`{ "youtube": "..." }` or `{ "src": "audio/rain.mp3" }`), or paste a link into "Rain sound" in the sound panel (this overrides the file on that device; Reset removes the override). It loops in its own hidden player with its own volume, alongside the music. Until one is set, the rain button reads "Add a rain sound".
+
+Notes: YouTube may show ads, and some videos block embedding (the player says so and skips to the next song). Only use music you have the right to use. Nothing autoplays: tap "Tap to start the sound" first.
 
 ## Structure
 

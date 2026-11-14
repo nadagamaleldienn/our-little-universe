@@ -115,7 +115,7 @@ export function mount(el, ctx) {
     if (e.target.closest('#gearBtn')) return ctx.openSettings();
     if (e.target.closest('#pcNote')) return ctx.go('letters', { compose: true });
     if (e.target.closest('#miniPlay')) return music.toggle();
-    if (e.target.closest('#miniRain')) return music.toggleRain();
+    if (e.target.closest('#miniRain')) { if (!music.state().rainSet) ctx.openSound(); return music.toggleRain(); }
     if (e.target.closest('#miniText')) return ctx.toggleSound();
   });
   const onDoc = (e) => {
@@ -160,8 +160,8 @@ export function mount(el, ctx) {
   }
   function renderPlayer() {
     const st = music.state();
-    q('.mini-title').textContent = st.title || (st.loaded ? 'No tracks yet' : 'Rainy playlist');
-    q('.mini-sub').textContent = st.count ? `Rainy playlist · track ${st.index + 1} of ${st.count}` : 'Add songs to audio/playlist.json';
+    q('.mini-title').textContent = st.title || (st.loaded ? 'No songs yet' : 'Rainy playlist');
+    q('.mini-sub').textContent = st.count ? `Rainy playlist · track ${st.index + 1} of ${st.count}` : 'Tap to add a YouTube song';
     const play = q('#miniPlay');
     play.setAttribute('aria-label', st.playing ? 'Pause' : 'Play');
     play.innerHTML = st.playing
@@ -169,7 +169,7 @@ export function mount(el, ctx) {
       : '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
     const r = q('#miniRain');
     r.setAttribute('aria-pressed', String(!!st.rainOn));
-    q('.mini-rain-t').textContent = st.rainOn ? 'Rain on' : 'Rain off';
+    q('.mini-rain-t').textContent = !st.rainSet ? 'Add a rain sound' : st.rainOn ? 'Rain on' : 'Rain off';
   }
   const offMusic = music.onChange(renderPlayer);
 

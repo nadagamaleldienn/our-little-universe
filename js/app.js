@@ -52,6 +52,7 @@ const ctx = {
   markAllRead,
   openBellPanel: () => openPanel('bellPanel', 'btnBell'),
   toggleSound: () => togglePanel('soundPanel', 'btnSound'),
+  openSound: () => { const p = $('#soundPanel'); if (p?.hidden) togglePanel('soundPanel', 'btnSound'); },
   refreshMail,
   get backend() { return backend; }
 };

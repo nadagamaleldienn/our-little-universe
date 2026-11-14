@@ -1,4 +1,4 @@
-[
-  { "title": "Rainy Window Lo-fi", "artist": "Example Artist", "src": "audio/example-track-1.mp3" },
-  { "title": "Lantern Light", "artist": "Example Artist", "src": "audio/example-track-2.mp3" }
-]
+{
+  "_help": "tracks: [{ \"title\": \"Song\", \"artist\": \"Artist\", \"youtube\": \"<video id or any youtube / music.youtube / youtu.be link>\" }, { \"youtubePlaylist\": \"<playlist id or link>\" }, { \"title\": \"File\", \"src\": \"audio/file.mp3\" }]. rain (optional): { \"youtube\": \"<id or link>\" } or { \"src\": \"audio/rain.mp3\" }. You can also paste links in the app (sound button); those are saved on that device only.",
+  "tracks": []
+}
