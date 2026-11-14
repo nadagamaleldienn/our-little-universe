@@ -1,7 +1,7 @@
 // Supabase backend. Same interface as local.js (see index.js).
 // The anon key is public by design; Row Level Security in supabase/schema.sql is the protection.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { defaultSettings, mergeDeep, PLANT_TYPES } from '../util.js';
+import { defaultSettings, mergeDeep, PLANT_TYPES, defaultName } from '../util.js';
 import { freshGame, applyMove } from './xo-logic.js';
 
 const iso = () => new Date().toISOString();
@@ -22,7 +22,7 @@ export function createSupabaseBackend({ url, key }) {
     return cached;
   }
   const need = async () => { const m = await meRow(); if (!m) throw new Error('Not signed in.'); return m; };
-  const needWho = async () => { const m = await need(); if (!m.who) throw new Error('Pick Her or Him first.'); return m; };
+  const needWho = async () => { const m = await need(); if (!m.who) throw new Error('Pick who you are first.'); return m; };
 
   function watchTables(tables, handler) {
     const ch = sb.channel('tbl-' + tables.join('-') + '-' + Math.random().toString(36).slice(2));
@@ -79,11 +79,11 @@ export function createSupabaseBackend({ url, key }) {
       const m = await need();
       const cur = toProfile(m.row);
       const character = patch.character ?? m.who;
-      if (!character) throw new Error('Pick Her or Him first.');
+      if (!character) throw new Error('Pick who you are first.');
       const row = {
         user_id: m.id,
         character,
-        display_name: patch.display_name ?? (cur.display_name || (character === 'her' ? 'Her' : 'Him')),
+        display_name: patch.display_name ?? (cur.display_name || defaultName(character)),
         settings: mergeDeep(cur.settings, patch.settings || {}),
         updated_at: iso()
       };
@@ -211,10 +211,10 @@ export function createSupabaseBackend({ url, key }) {
   }
   const plants = {
     list: listPlants,
-    async add({ type, potColor }) {
+    async add({ type, potColor, label }) {
       const m = await needWho();
       const t = PLANT_TYPES.find((x) => x.id === type) || PLANT_TYPES[0];
-      const { data, error } = await sb.from('plants').insert({ type: t.id, label: t.name, pot_color: potColor, by_char: m.who, watered_at: iso() }).select().single();
+      const { data, error } = await sb.from('plants').insert({ type: t.id, label: (label || '').trim().slice(0, 24) || t.name, pot_color: potColor, by_char: m.who, watered_at: iso() }).select().single();
       fail(error);
       await logIt(m, toPlant(data), 'plant');
       return toPlant(data);

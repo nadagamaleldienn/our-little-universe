@@ -16,7 +16,7 @@ python -m http.server 8000
 
 Open the printed address. With an empty `config.js` the app runs in **local mode**: data lives in your browser (localStorage) and two tabs talk over a BroadcastChannel.
 
-To see the pair together: open one tab and pick **I'm Her**, open a second tab and pick **I'm Him**. Click spots in the room and watch the other character walk over. If you both pick the same spot you curl up under one blanket. Use **Wave** to send a wave and a little heart.
+To see the pair together: open one tab and pick **I'm Nada**, open a second tab and pick **I'm Abdelrahman**. Click spots in the room and watch the other character walk over. If you both pick the same spot you curl up under one blanket. Use **Wave** to send a wave and a little heart.
 
 ## Supabase setup (real two-person use)
 
@@ -34,7 +34,7 @@ To see the pair together: open one tab and pick **I'm Her**, open a second tab a
    export const SUPABASE_URL = 'https://xxxx.supabase.co';
    export const SUPABASE_ANON_KEY = 'eyJ...';
    ```
-8. Open the site, enter your email, tap the magic link, then pick **Her** or **Him** (once each).
+8. Open the site, enter your email, tap the magic link, then pick **Nada** or **Abdelrahman** (once each).
 
 The anon key is meant to be public. Row Level Security (see the comments in `schema.sql`) lets only the two allowed users read or write anything. Never use the `service_role` key here.
 
@@ -69,7 +69,7 @@ index.html  css/styles.css  config.js  config.example.js
 js/app.js        shell, router, presence HUD, bell, settings
 js/scene.js      Cozy Corner scene (SVG + CSS)
 js/characters.js all character drawing (replaceable, one module)
-js/weather.js    weather modes and particles
+js/weather.js    weather palettes and labels (the scene draws the weather itself)
 js/music.js      music + rain player
 js/views/        home, map, letters, xo, plants
 js/backend/      index.js picks supabase.js or local.js

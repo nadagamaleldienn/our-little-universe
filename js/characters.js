@@ -519,7 +519,7 @@ export function renderCharacter(props = {}) {
       eB = hm.eyes || none;
     }
 
-    const WHO = { her: 'Her character', him: 'His character', together: 'The couple together' };
+    const WHO = { her: 'Nada', him: 'Abdelrahman', together: 'Nada and Abdelrahman together' };
     const POSE = { stand: 'standing', sit: 'sitting', curl: who === 'together' ? 'curled up under a striped blanket' : 'curled up with knees hugged' };
     const ITEM = { none: '', book: 'with a book', laptop: 'with a laptop', controller: 'holding a game controller', headphones: 'wearing headphones', mug: 'holding a warm mug', watering: 'with a watering can', soldering: 'with a soldering iron' };
     const label = WHO[who] + ', ' + POSE[pose] + (ITEM[item] ? ' ' + ITEM[item] : '');

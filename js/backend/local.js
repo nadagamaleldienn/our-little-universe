@@ -1,7 +1,7 @@
 // Local demo backend: data lives in localStorage, changes are announced over a
-// BroadcastChannel so two tabs (tab 1 as Her, tab 2 as Him) behave like two devices.
+// BroadcastChannel so two tabs (tab 1 as Nada, tab 2 as Abdelrahman) behave like two devices.
 // The "who am I" choice lives in sessionStorage, so each tab can be a different person.
-import { defaultSettings, mergeDeep, ID, PLANT_TYPES } from '../util.js';
+import { defaultSettings, mergeDeep, ID, PLANT_TYPES, defaultName } from '../util.js';
 import { freshGame, applyMove } from './xo-logic.js';
 
 const NS = 'olu:';
@@ -65,7 +65,7 @@ export function createLocalBackend() {
   };
 
   // ---------- profile ----------
-  const defName = (w) => (w === 'her' ? 'Her' : 'Him');
+  const defName = defaultName;
   function ensureProfile(who) {
     if (!rd('profile:' + who, null)) wr('profile:' + who, { character: who, display_name: defName(who), settings: defaultSettings() });
   }
@@ -99,7 +99,7 @@ export function createLocalBackend() {
   const auth = {
     mode: 'local',
     async signIn(who) {
-      if (who !== 'her' && who !== 'him') throw new Error('Pick Her or Him.');
+      if (who !== 'her' && who !== 'him') throw new Error('Pick who you are.');
       sessionStorage.setItem(NS + 'who', who);
       ensureProfile(who);
       return { id: who, who, email: null };
@@ -178,9 +178,9 @@ export function createLocalBackend() {
   }
   const plants = {
     async list() { return P(); },
-    async add({ type, potColor }) {
+    async add({ type, potColor, label }) {
       const t = PLANT_TYPES.find((x) => x.id === type) || PLANT_TYPES[0];
-      const p = { id: ID(), type: t.id, label: t.name, potColor, by: getWho(), plantedAt: Date.now(), wateredAt: Date.now(), sunAt: null, sungAt: null };
+      const p = { id: ID(), type: t.id, label: (label || '').trim().slice(0, 24) || t.name, potColor, by: getWho(), plantedAt: Date.now(), wateredAt: Date.now(), sunAt: null, sungAt: null };
       wr('plants', [...P(), p]); logIt(p, 'plant'); publish('plants');
       return p;
     },

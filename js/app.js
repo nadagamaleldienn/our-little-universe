@@ -1,7 +1,7 @@
 // Our Little Universe: app shell. Boot, sign-in, view router, presence HUD,
 // notifications bell, sound and settings panels.
 import { createBackend } from './backend/index.js';
-import { ACTIVITIES, defaultSettings, mergeDeep, esc, relTime, locName, icon, toast, confirmDialog, $ } from './util.js';
+import { ACTIVITIES, LOCATIONS, DEFAULT_NAMES, defaultName, cleanName, defaultSettings, mergeDeep, esc, relTime, locName, icon, toast, confirmDialog, $ } from './util.js';
 import { itemFor } from './scene.js';
 import { createMusic } from './music.js';
 import { applyWeatherTheme } from './weather.js';
@@ -18,13 +18,12 @@ const VIEWS = {
   xo: { mod: xoView, label: 'XO', icon: 'xo' },
   plants: { mod: plants, label: 'Plants', icon: 'leaf' }
 };
-const VIS = { live: 'Live', lastSeenOnly: 'Last stop only', offline: 'Appearing offline' };
 const HEARTBEAT_MS = 30000;
 
 const S = {
   me: null, other: null, otherWho: null, otherName: 'Them', userId: null,
   peers: [], seen: {}, location: 'cozy', activity: null,
-  otherStatus: { kind: 'none' }, notifs: [], chipOpen: false
+  otherStatus: { kind: 'none' }, notifs: [], hasMail: false
 };
 let backend = null;
 let root = null;
@@ -46,6 +45,14 @@ const ctx = {
   setActivity,
   setWeather,
   wave,
+  music,
+  saveSettings,
+  openSettings,
+  openNotif,
+  markAllRead,
+  openBellPanel: () => openPanel('bellPanel', 'btnBell'),
+  toggleSound: () => togglePanel('soundPanel', 'btnSound'),
+  refreshMail,
   get backend() { return backend; }
 };
 
@@ -68,7 +75,7 @@ function showLogin(note = '') {
     <h1>Our Little Universe</h1>
     <p class="muted">A pretend world for two. No real places, ever.</p>
     ${local
-      ? `<p>Who are you?</p><div class="row center"><button class="btn" data-who="her">I'm Her</button><button class="btn" data-who="him">I'm Him</button></div>
+      ? `<p>Who are you?</p><div class="row center"><button class="btn" data-who="her">I'm ${esc(DEFAULT_NAMES.her)}</button><button class="btn" data-who="him">I'm ${esc(DEFAULT_NAMES.him)}</button></div>
          <p class="note">Local demo mode: data stays in this browser. Open a second tab and pick the other person to see the two of you together.</p>`
       : `<form id="mail"><label>Your email<input type="email" name="email" required autocomplete="email" placeholder="you@example.com"></label><button class="btn">Send me a magic link</button></form>`}
     <p class="note" role="status">${esc(note)}</p></main>`;
@@ -86,11 +93,11 @@ function showLogin(note = '') {
 }
 
 function showCharacterPicker(note = '') {
-  root.innerHTML = `<main class="login card center"><h1>Who are you in this world?</h1><div class="row center"><button class="btn" data-c="her">Her</button><button class="btn" data-c="him">Him</button></div><p class="note" role="status">${esc(note)}</p></main>`;
+  root.innerHTML = `<main class="login card center"><h1>Who are you in this world?</h1><div class="row center"><button class="btn" data-c="her">${esc(DEFAULT_NAMES.her)}</button><button class="btn" data-c="him">${esc(DEFAULT_NAMES.him)}</button></div><p class="note" role="status">${esc(note)}</p></main>`;
   root.onclick = async (e) => {
     const b = e.target.closest('[data-c]');
     if (!b) return;
-    try { await backend.profile.set({ character: b.dataset.c, display_name: b.dataset.c === 'her' ? 'Her' : 'Him' }); begin(await backend.auth.currentUser()); } catch (err) { showCharacterPicker(err.message); }
+    try { await backend.profile.set({ character: b.dataset.c, display_name: defaultName(b.dataset.c) }); begin(await backend.auth.currentUser()); } catch (err) { showCharacterPicker(err.message); }
   };
 }
 
@@ -98,11 +105,14 @@ async function begin(user) {
   const prof = await backend.profile.get();
   if (!prof.character) return showCharacterPicker();
   S.userId = user.id;
-  S.me = { who: prof.character, name: prof.display_name || (prof.character === 'her' ? 'Her' : 'Him'), settings: mergeDeep(defaultSettings(), prof.settings) };
+  S.me = { who: prof.character, name: cleanName(prof.character, prof.display_name), settings: mergeDeep(defaultSettings(), prof.settings) };
   S.otherWho = S.me.who === 'her' ? 'him' : 'her';
   await refreshOther();
+  refreshMail();
   applyWeatherTheme(S.me.settings.weather);
   try { S.notifs = JSON.parse(localStorage.getItem(`olu:notifs:${S.me.who}`) || '[]'); } catch { S.notifs = []; }
+  // Notifications saved before the names were set read "Her ..." / "Him ...": show the real names.
+  S.notifs.forEach((n) => { n.text = String(n.text).replace(/^Her\b/, DEFAULT_NAMES.her).replace(/^Him\b/, DEFAULT_NAMES.him); });
   buildShell();
 
   backend.presence.onPeers((list) => {
@@ -125,7 +135,7 @@ async function begin(user) {
     computeOther();
     renderAll();
   });
-  backend.letters.onNew((l) => pushNotif('letter', `A letter was left at ${locName(l.location)}`));
+  backend.letters.onNew((l) => { refreshMail(); pushNotif('letter', `A letter was left at ${locName(l.location)}`); });
   backend.xo.get().then((g) => { prevTurn = g.turn; });
   backend.xo.onChange((g) => {
     const mark = S.me.who === 'her' ? 'X' : 'O';
@@ -142,7 +152,7 @@ async function begin(user) {
     }
   });
 
-  setInterval(() => { syncMe(); renderHud(); }, HEARTBEAT_MS);
+  setInterval(() => { syncMe(); viewApi?.update?.(); }, HEARTBEAT_MS);
   window.addEventListener('pagehide', () => { if (joined) backend.presence.leave(); });
   window.addEventListener('hashchange', route);
   route();
@@ -152,7 +162,7 @@ async function begin(user) {
 async function refreshOther() {
   const o = await backend.profile.getOther().catch(() => null);
   S.other = o;
-  S.otherName = o?.display_name || (S.otherWho === 'her' ? 'Her' : 'Him');
+  S.otherName = cleanName(S.otherWho, o?.display_name);
 }
 
 // ---------------------------------------------------------------- presence + status
@@ -221,7 +231,7 @@ async function saveSettings(patch) {
 // ---------------------------------------------------------------- shell
 function buildShell() {
   root.onclick = null;
-  root.innerHTML = `<div class="app">
+  root.innerHTML = `<div class="app" data-view="home">
     <header class="top">
       <h1><span class="logo" aria-hidden="true">✦</span> Our Little Universe</h1>
       <div class="top-actions">
@@ -230,52 +240,70 @@ function buildShell() {
         <button class="icon-btn" id="btnSettings" aria-label="Settings and privacy">${icon('gear')}</button>
       </div>
     </header>
-    <div class="panel card" id="soundPanel" hidden></div>
-    <div class="panel card" id="bellPanel" hidden></div>
-    <section class="hud" id="hud" aria-label="Who is here"></section>
+    <div class="panel card sound-panel" id="soundPanel" hidden></div>
+    <div class="panel card bell-panel" id="bellPanel" hidden aria-label="Gentle notifications"></div>
     <main id="view" tabindex="-1"></main>
     <nav class="tabs" aria-label="Views">${Object.entries(VIEWS).map(([id, v]) => `<button data-view="${id}">${icon(v.icon)}<span>${v.label}</span></button>`).join('')}</nav>
   </div>`;
   music.mount($('#soundPanel'));
   root.onclick = onShellClick;
+  root.onchange = onShellChange;
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePanels(); });
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.panel, #btnSound, #btnBell')) closePanels();
-    if (S.chipOpen && !e.target.closest('.chip-wrap')) { S.chipOpen = false; renderHud(); }
+    // composedPath() is taken at dispatch time, so it still works when the click re-rendered its own target.
+    const inside = e.composedPath().some((n) => n.matches?.('.panel, #btnSound, #btnBell, #allNotifs, .mini, .h-bell'));
+    if (!inside) closePanels();
   });
   renderAll();
 }
 
 function onShellClick(e) {
   const nav = e.target.closest('[data-view]');
-  if (nav) return go(nav.dataset.view);
+  if (nav && nav.closest('.tabs')) return go(nav.dataset.view);
   if (e.target.closest('#btnSound')) return togglePanel('soundPanel', 'btnSound');
   if (e.target.closest('#btnBell')) return togglePanel('bellPanel', 'btnBell');
   if (e.target.closest('#btnSettings')) return openSettings();
-  const hud = e.target.closest('#hud');
-  if (hud) hudClick(e);
   const n = e.target.closest('[data-notif]');
-  if (n) {
-    const it = S.notifs.find((x) => x.id === n.dataset.notif);
-    if (it) { it.read = true; saveNotifs(); }
-    closePanels();
-    go({ letter: 'letters', xo: 'xo', plant: 'plants', here: 'home' }[it?.type] || 'home');
-  }
-  if (e.target.closest('#markAll')) { S.notifs.forEach((x) => (x.read = true)); saveNotifs(); }
+  if (n && n.closest('#bellPanel')) return openNotif(n.dataset.notif);
+  if (e.target.closest('#bellPanel #markAll')) return markAllRead();
+  if (e.target.closest('#sBrowser')) return toggleBrowserPush();
 }
+
+function openNotif(id) {
+  const it = S.notifs.find((x) => x.id === id);
+  if (it) { it.read = true; saveNotifs(); }
+  closePanels();
+  go({ letter: 'letters', xo: 'xo', plant: 'plants', here: 'home' }[it?.type] || 'home');
+}
+function markAllRead() { S.notifs.forEach((x) => (x.read = true)); saveNotifs(); }
 
 function togglePanel(id, btnId) {
   const p = $('#' + id);
   const open = p.hidden;
   closePanels();
   p.hidden = !open;
-  $('#' + btnId).setAttribute('aria-expanded', String(open));
+  $('#' + btnId)?.setAttribute('aria-expanded', String(open));
+  if (open && id === 'bellPanel') renderBell();
+}
+function openPanel(id, btnId) {
+  closePanels();
+  $('#' + id).hidden = false;
+  $('#' + btnId)?.setAttribute('aria-expanded', 'true');
+  renderBell();
 }
 function closePanels() {
   for (const [p, b] of [['soundPanel', 'btnSound'], ['bellPanel', 'btnBell']]) {
     const el = $('#' + p);
     if (el) { el.hidden = true; $('#' + b)?.setAttribute('aria-expanded', 'false'); }
   }
+}
+
+async function refreshMail() {
+  try {
+    const list = await backend.letters.list();
+    S.hasMail = list.some((l) => l.to === S.me.who && !l.readAt);
+  } catch { S.hasMail = false; }
+  viewApi?.update?.();
 }
 
 // ---------------------------------------------------------------- router
@@ -292,6 +320,7 @@ function route() {
   const fresh = el.cloneNode(false); // drops listeners the previous view attached
   el.replaceWith(fresh);
   ctx.params = params;
+  $('.app')?.setAttribute('data-view', name);
   viewApi = VIEWS[name].mod.mount(fresh, ctx);
   document.querySelectorAll('.tabs [data-view]').forEach((b) => b.toggleAttribute('aria-current', b.dataset.view === name));
   ctx.params = {};
@@ -299,38 +328,8 @@ function route() {
 
 function renderAll() {
   if (!S.me) return;
-  renderHud();
   renderBell();
   viewApi?.update?.();
-}
-
-// ---------------------------------------------------------------- HUD
-function otherLine() {
-  const st = S.otherStatus;
-  const act = ACTIVITIES[st.act]?.label;
-  if (st.kind === 'live') return { cls: 'live', text: `Here now · ${locName(st.loc)}${act ? ' · ' + act : ''}` };
-  if (st.kind === 'last') return { cls: 'last', text: `Last here ${relTime(st.at)}${st.loc ? ' · ' + locName(st.loc) : ''}` };
-  if (st.kind === 'hidden') return { cls: 'hidden', text: 'Somewhere in the world' };
-  return { cls: 'hidden', text: 'Has not visited yet' };
-}
-
-function renderHud() {
-  const hud = $('#hud');
-  if (!hud) return;
-  const o = otherLine();
-  const { visibility, hideActivity } = S.me.settings;
-  hud.innerHTML = `<div class="card hud-card"><span class="dot ${o.cls}" aria-hidden="true"></span><div><div class="hud-name">${esc(S.otherName)}</div><div class="hud-line" role="status">${esc(o.text)}</div></div></div>
-    <div class="chip-wrap"><button class="card chip" id="chipBtn" aria-haspopup="menu" aria-expanded="${S.chipOpen}"><span class="dot ${visibility === 'live' ? 'live' : visibility === 'offline' ? 'hidden' : 'last'}" aria-hidden="true"></span><span>You · ${VIS[visibility]}${hideActivity ? ' · activity hidden' : ''}</span></button>
-      ${S.chipOpen ? `<div class="menu card" role="menu" aria-label="Your status">
-        ${Object.keys(VIS).map((id) => `<button role="menuitemradio" aria-checked="${visibility === id}" data-vis="${id}">${id === 'live' ? 'Live' : id === 'lastSeenOnly' ? 'Last stop only' : 'Appear offline'}</button>`).join('')}
-        <button role="menuitemcheckbox" aria-checked="${hideActivity}" data-hide="1">Hide what I'm doing</button></div>` : ''}</div>`;
-}
-
-function hudClick(e) {
-  if (e.target.closest('#chipBtn')) { S.chipOpen = !S.chipOpen; renderHud(); $('#chipBtn')?.focus(); return; }
-  const v = e.target.closest('[data-vis]');
-  if (v) { S.chipOpen = false; saveSettings({ settings: { visibility: v.dataset.vis } }); setTimeout(() => $('#chipBtn')?.focus(), 0); }
-  if (e.target.closest('[data-hide]')) { S.chipOpen = false; saveSettings({ settings: { hideActivity: !S.me.settings.hideActivity } }); setTimeout(() => $('#chipBtn')?.focus(), 0); }
 }
 
 // ---------------------------------------------------------------- notifications
@@ -349,6 +348,7 @@ function saveNotifs() {
   S.notifs = S.notifs.slice(0, 50);
   try { localStorage.setItem(`olu:notifs:${S.me.who}`, JSON.stringify(S.notifs)); } catch { /* ignore */ }
   renderBell();
+  viewApi?.update?.();
 }
 function pushNotif(kind, text) {
   const pref = S.me.settings.notify;
@@ -362,6 +362,14 @@ function pushNotif(kind, text) {
     try { new Notification('Our Little Universe', { body: text }); } catch { /* ignore */ }
   }
 }
+const NOTIF_ICON = {
+  letter: '<rect x="3" y="5" width="18" height="14"/><path d="M3 5l9 8 9-8"/>',
+  xo: '<path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>',
+  here: '<path d="M7 3h10v8H7zM5 11h14v3H5zM9 14v7M15 14v7"/>',
+  plant: '<path d="M5 19c0-8 5-13 14-14 0 9-5 14-13 14zM5 19l7-7"/>'
+};
+const sw = (attr, on, label) => `<label class="sw"><input type="checkbox" ${attr} ${on ? 'checked' : ''}><span class="trk"><span class="knob"></span></span><span>${label}</span></label>`;
+
 function renderBell() {
   const p = $('#bellPanel');
   if (!p) return;
@@ -370,47 +378,109 @@ function renderBell() {
   b.hidden = !unread;
   b.textContent = unread;
   $('#btnBell').setAttribute('aria-label', unread ? `Notifications, ${unread} unread` : 'Notifications');
-  p.innerHTML = `<div class="row between"><h2>Notifications</h2><button class="link" id="markAll" ${unread ? '' : 'disabled'}>Mark all read</button></div>
-    ${S.notifs.length ? `<ul class="plain notif-list">${S.notifs.map((n) => `<li><button class="notif ${n.read ? '' : 'unread'}" data-notif="${n.id}">${esc(n.text)}<span class="muted"> · ${relTime(n.at)}</span></button></li>`).join('')}</ul>` : '<p class="muted">All quiet.</p>'}
-    <p class="note">Nothing here tells anyone when you read something.</p>`;
+  if (p.hidden) return; // drawn when opened
+  const s = S.me.settings;
+  const q = s.quiet;
+  const ae = document.activeElement;
+  const focus = ae && p.contains(ae) ? (ae.id ? '#' + ae.id : ae.dataset.n ? `[data-n="${ae.dataset.n}"]` : ae.dataset.notif ? `[data-notif="${ae.dataset.notif}"]` : '') : '';
+  const latest = S.notifs[0];
+  const notSupported = !('Notification' in window);
+  p.innerHTML = `<div class="np-head"><h2>Gentle notifications</h2><button class="btn sm" id="markAll" ${unread ? '' : 'disabled'}>Mark all read</button></div>
+    <div class="np-room" aria-hidden="true"><span class="np-win"></span><span class="np-sill"></span><span class="np-rug"></span><span class="lab np-cap">Cozy Corner · preview</span>${latest ? `<span class="np-toast"><span class="np-led"></span>${esc(latest.text)}</span>` : ''}</div>
+    <div><div class="lab">Recent · ${unread} unread</div>
+      <div class="np-list">${S.notifs.length ? S.notifs.slice(0, 8).map((n) => `<button class="np-it${n.read ? '' : ' unread'}" data-notif="${n.id}" aria-label="${esc(n.text)}, ${relTime(n.at)}${n.read ? '' : ', unread'}"><span class="np-ico"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">${NOTIF_ICON[n.type] || NOTIF_ICON.here}</svg></span><span class="np-t">${esc(n.text)}</span><span class="lab np-time">${relTime(n.at)}</span>${n.read ? '' : '<span class="np-dot"></span>'}</button>`).join('') : '<p class="muted">All quiet.</p>'}</div></div>
+    <div><div class="lab">Notify me about</div><div class="np-sw">
+      ${sw('data-n="letters"', s.notify.letters !== false, 'Letters')}${sw('data-n="xo"', s.notify.xo !== false, 'Game moves')}${sw('data-n="here"', s.notify.here !== false, `When ${esc(S.otherName)} arrives`)}${sw('data-n="plants"', s.notify.plants !== false, 'Plants watered')}</div></div>
+    <div class="np-row">
+      <div><div class="lab">Quiet hours</div>${sw('id="qOn"', q.enabled, 'Quiet hours')}
+        <div class="np-times"><label for="qStart">From</label><input id="qStart" class="tm" type="time" value="${q.start}"><label for="qEnd">to</label><input id="qEnd" class="tm" type="time" value="${q.end}"></div></div>
+      <div><div class="lab">Delivery</div>
+        <label class="rd"><input type="radio" name="delivery" value="world" ${s.notify.browser ? '' : 'checked'}><span>In-world only</span></label>
+        <label class="rd"><input type="radio" name="delivery" value="push" ${s.notify.browser ? 'checked' : ''} ${notSupported ? 'disabled' : ''}><span>Browser notifications</span></label></div>
+    </div>
+    <p class="np-off">Off by default. Nothing tells ${esc(S.otherName)} when you read something.</p>
+    <p class="note">Browser notifications need your permission, and are only asked after a tap. Quiet hours keep the bell quiet too.</p>`;
+  if (focus) p.querySelector(focus)?.focus();
 }
 
-// ---------------------------------------------------------------- settings
+async function enableBrowserPush() {
+  if (!('Notification' in window)) return toast('Browser notifications are not available here.');
+  const perm = await Notification.requestPermission();
+  if (perm === 'granted') saveSettings({ settings: { notify: { browser: true } } });
+  else { toast("No permission was given. That's okay, the bell still works."); renderBell(); }
+}
+function toggleBrowserPush() { return S.me.settings.notify.browser ? saveSettings({ settings: { notify: { browser: false } } }) : enableBrowserPush(); }
+
+function onShellChange(e) {
+  const t = e.target;
+  if (!t.closest('#bellPanel')) return;
+  if (t.dataset.n) saveSettings({ settings: { notify: { [t.dataset.n]: t.checked } } });
+  else if (t.id === 'qOn' || t.id === 'qStart' || t.id === 'qEnd') {
+    const p = $('#bellPanel');
+    saveSettings({ settings: { quiet: { enabled: p.querySelector('#qOn').checked, start: p.querySelector('#qStart').value || '22:00', end: p.querySelector('#qEnd').value || '08:00' } } });
+  } else if (t.name === 'delivery') {
+    if (t.value === 'push') enableBrowserPush(); else saveSettings({ settings: { notify: { browser: false } } });
+  }
+}
+
+// ---------------------------------------------------------------- settings (design/Privacy.dc.html)
+function previewText() {
+  const s = S.me.settings;
+  const act = ACTIVITIES[S.activity]?.label;
+  const place = locName(S.location);
+  if (s.visibility === 'live') return [`${S.me.name} · Here now · ${place}`, s.hideActivity ? `${S.otherName} sees the place only, not what you are doing.` : `${S.otherName} sees what you are doing: ${act || 'nothing in particular'}.`];
+  if (s.visibility === 'lastSeenOnly') return [`${S.me.name} · Last stop only`, s.hideActivity ? `Place only: ${place}.` : `${place}${act ? ', ' + act : ''}.`];
+  return [`${S.me.name} · Somewhere in the world`, 'Appearing offline: no live presence and no last stop are saved.'];
+}
+
 function openSettings() {
   const s = S.me.settings;
-  const notSupported = !('Notification' in window);
   const d = document.createElement('dialog');
-  d.className = 'modal settings';
+  d.className = 'modal settings pv';
   d.setAttribute('aria-label', 'Settings and privacy');
-  d.innerHTML = `<form method="dialog" class="stack">
-    <h2>Settings &amp; privacy</h2>
-    <p class="pretend">This is a pretend world. No real locations, ever.</p>
-    <label>Display name<input id="sName" maxlength="24" value="${esc(S.me.name)}"></label>
-    <fieldset><legend>Who can see I'm around</legend>
-      ${Object.keys(VIS).map((id) => `<label class="check"><input type="radio" name="vis" value="${id}" ${s.visibility === id ? 'checked' : ''}> ${id === 'live' ? 'Live: they see me here now' : id === 'lastSeenOnly' ? 'Last stop only: no live presence' : 'Appear offline: nothing is shared'}</label>`).join('')}
-      <label class="check"><input type="checkbox" id="sHide" ${s.hideActivity ? 'checked' : ''}> Hide what I'm doing (share only where I am)</label></fieldset>
-    <fieldset><legend>Notifications</legend>
-      ${[['letters', 'New letters'], ['xo', 'My move in XO'], ['here', 'They are here now'], ['plants', 'Plant watered']].map(([k, l]) => `<label class="check"><input type="checkbox" data-n="${k}" ${s.notify[k] !== false ? 'checked' : ''}> ${l}</label>`).join('')}
-      ${notSupported ? '<p class="note">Browser notifications are not available here.</p>' : `<button type="button" class="btn ghost" id="sBrowser">${s.notify.browser ? 'Turn off browser notifications' : 'Turn on browser notifications'}</button>`}</fieldset>
-    <fieldset><legend>Quiet hours</legend>
-      <label class="check"><input type="checkbox" id="qOn" ${s.quiet.enabled ? 'checked' : ''}> Quiet hours</label>
-      <div class="row"><label>From<input type="time" id="qStart" value="${s.quiet.start}"></label><label>To<input type="time" id="qEnd" value="${s.quiet.end}"></label></div></fieldset>
-    <div class="row wrap"><button type="button" class="btn ghost" id="sOut">Sign out</button><button type="button" class="btn danger" id="sDel">Delete my data</button><button class="btn" value="close">Done</button></div>
+  const modes = [['live', 'Show where I am, live'], ['lastSeenOnly', 'Only show my last stop'], ['offline', 'Appear offline']];
+  d.innerHTML = `<form method="dialog" class="pv-form">
+    <h2>How I appear</h2>
+    <label class="lbl" for="sName">Display name</label>
+    <input id="sName" class="fld" maxlength="24" value="${esc(S.me.name)}" placeholder="${esc(defaultName(S.me.who))}">
+    <fieldset class="pv-modes"><legend class="lbl">Who can see what</legend>
+      ${modes.map(([id, l]) => `<label class="opt${s.visibility === id ? ' on' : ''}"><input type="radio" name="vis" value="${id}" ${s.visibility === id ? 'checked' : ''}>${l}</label>`).join('')}
+    </fieldset>
+    <label class="opt pv-sw"><span>Hide what I'm doing, show the place only</span><input class="swi" type="checkbox" id="sHide" ${s.hideActivity ? 'checked' : ''}></label>
+    <p class="pv-box">This is a pretend world. No real locations, no tracking, no read receipts. Being away is always okay.</p>
+    <section class="pv-note"><h3>Leave a note</h3>
+      <label class="lbl" for="noteLoc">Where to pin it</label>
+      <select id="noteLoc" class="fld">${LOCATIONS.map((l) => `<option value="${l.id}" ${l.id === S.location ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select>
+      <label class="lbl" for="noteText">Your note</label>
+      <textarea id="noteText" class="fld" rows="2" maxlength="300"></textarea>
+      <div class="row"><button type="button" class="btn" id="pinNote">Pin note</button><span class="pv-pinned" id="pinned" role="status"></span></div></section>
+    <div class="pv-preview"><div class="lbl">How ${esc(S.otherName)} will see you</div><div class="pv-pm" id="pvMain"></div><div class="pv-ps" id="pvSub"></div></div>
+    <p class="note">Notification choices live in the bell. This is where you decide how much to share.</p>
+    <div class="row wrap pv-actions"><button type="button" class="btn ghost" id="sOut">Sign out</button><button type="button" class="btn danger" id="sDel">Delete my data</button><button class="btn" value="close">Done</button></div>
   </form>`;
   const q = (sel) => d.querySelector(sel);
-  d.addEventListener('change', (e) => {
+  const paint = () => {
+    const [m, sub] = previewText();
+    q('#pvMain').textContent = m;
+    q('#pvSub').textContent = sub;
+    d.querySelectorAll('.pv-modes .opt').forEach((o) => o.classList.toggle('on', o.querySelector('input').checked));
+  };
+  paint();
+  d.addEventListener('change', async (e) => {
     const t = e.target;
-    if (t.name === 'vis') saveSettings({ settings: { visibility: t.value } });
-    else if (t.id === 'sHide') saveSettings({ settings: { hideActivity: t.checked } });
-    else if (t.dataset.n) saveSettings({ settings: { notify: { [t.dataset.n]: t.checked } } });
-    else if (t.id === 'qOn' || t.id === 'qStart' || t.id === 'qEnd') saveSettings({ settings: { quiet: { enabled: q('#qOn').checked, start: q('#qStart').value || '22:00', end: q('#qEnd').value || '08:00' } } });
-    else if (t.id === 'sName') saveSettings({ display_name: t.value.trim() || S.me.name });
+    if (t.name === 'vis') { await saveSettings({ settings: { visibility: t.value } }); paint(); }
+    else if (t.id === 'sHide') { await saveSettings({ settings: { hideActivity: t.checked } }); paint(); }
+    else if (t.id === 'sName') { await saveSettings({ display_name: t.value.trim() || defaultName(S.me.who) }); t.value = S.me.name; paint(); }
   });
-  // Browser notifications are off by default and only ask for permission after this click.
-  q('#sBrowser')?.addEventListener('click', async (e) => {
-    if (S.me.settings.notify.browser) { saveSettings({ settings: { notify: { browser: false } } }); e.target.textContent = 'Turn on browser notifications'; return; }
-    const perm = await Notification.requestPermission();
-    if (perm === 'granted') { saveSettings({ settings: { notify: { browser: true } } }); e.target.textContent = 'Turn off browser notifications'; } else toast("No permission was given. That's okay, the bell still works.");
+  q('#pinNote').addEventListener('click', async () => {
+    const text = q('#noteText').value.trim();
+    const loc = q('#noteLoc').value;
+    if (!text) return toast('Write a few words first');
+    try {
+      await backend.letters.send({ to: S.otherWho, location: loc, text, seal: 'star' });
+      q('#noteText').value = '';
+      q('#pinned').textContent = `Pinned at ${locName(loc)} ✦`;
+    } catch (err) { toast(err.message); }
   });
   q('#sOut').addEventListener('click', async () => { await backend.auth.signOut(); location.reload(); });
   q('#sDel').addEventListener('click', async () => {
@@ -421,5 +491,6 @@ function openSettings() {
   document.body.appendChild(d);
   d.showModal();
 }
+
 
 boot();

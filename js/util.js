@@ -1,12 +1,12 @@
 // Shared constants and tiny helpers. No DOM work at import time.
 
 export const LOCATIONS = [
-  { id: 'cozy', name: 'Cozy Corner', x: 17, y: 66, blurb: 'Rain on the window, a cat on the seat, a lamp that never goes out.' },
-  { id: 'library', name: 'Lantern Library', x: 36, y: 28, blurb: 'Tall shelves, paper lanterns, and a ladder that goes a little too high.' },
-  { id: 'cafe', name: 'Rainy Station Café', x: 68, y: 58, blurb: 'A tiny platform café. The trains only ever arrive when you are happy.' },
-  { id: 'hill', name: 'Starlight Hill', x: 62, y: 16, blurb: 'The best place to lie in the grass and count pretend constellations.' },
-  { id: 'lake', name: 'Lilac Lake', x: 38, y: 78, blurb: 'Still water, lilac reeds, and a rowing boat nobody owns.' },
-  { id: 'garden', name: 'Firefly Garden', x: 86, y: 80, blurb: 'Evenings last longer here, and the fireflies keep secrets.' }
+  { id: 'cozy', name: 'Cozy Corner', mx: 200, my: 600, blurb: 'Rain on the window, a cat on the seat, a lamp that never goes out.' },
+  { id: 'library', name: 'Lantern Library', mx: 170, my: 300, blurb: 'Tall shelves, paper lanterns, and a ladder that goes a little too high.' },
+  { id: 'cafe', name: 'Rainy Station Café', mx: 460, my: 470, blurb: 'A tiny platform café. The trains only ever arrive when you are happy.' },
+  { id: 'hill', name: 'Starlight Hill', mx: 700, my: 200, blurb: 'The best place to lie in the grass and count pretend constellations.' },
+  { id: 'lake', name: 'Lilac Lake', mx: 780, my: 560, blurb: 'Still water, lilac reeds, and a rowing boat nobody owns.' },
+  { id: 'garden', name: 'Firefly Garden', mx: 450, my: 760, blurb: 'Evenings last longer here, and the fireflies keep secrets.' }
 ];
 
 export const ACTIVITIES = {
@@ -32,9 +32,15 @@ export const POT_COLORS = [
   { id: '#F6C945', name: 'Butter' },
   { id: '#B9A6EC', name: 'Lilac' },
   { id: '#7C63C9', name: 'Violet' },
-  { id: '#8C93D9', name: 'Rain blue' },
-  { id: '#F4F0FD', name: 'Cloud' }
+  { id: '#E9A23B', name: 'Amber' },
+  { id: '#DCD2F7', name: 'Mist' },
+  { id: '#8C93D9', name: 'Rain blue' }
 ];
+
+// Display names (internal ids stay 'her' | 'him'). Old saved defaults 'Her'/'Him' are upgraded.
+export const DEFAULT_NAMES = { her: 'Nada', him: 'Abdelrahman' };
+export const defaultName = (who) => DEFAULT_NAMES[who] || 'Friend';
+export const cleanName = (who, name) => { const n = String(name || '').trim(); return !n || /^(her|him)$/i.test(n) ? defaultName(who) : n; };
 
 export const WEATHER_IDS = ['rain', 'sunrise', 'snow', 'night', 'storm'];
 
@@ -131,4 +137,32 @@ export function confirmDialog(message, { ok = 'Yes', cancel = 'Cancel', danger =
     document.body.appendChild(d);
     d.showModal();
   });
+}
+
+// Scales a fixed-size design stage (W x H px) to fit its parent. The stage keeps the design's
+// pixel coordinates; only transform: scale() changes. Returns { destroy, scale() }.
+export function fitStage(box, stage, W, H, { fitHeight = false, onScale } = {}) {
+  let s = 1;
+  const apply = () => {
+    const parent = box.parentElement;
+    if (!parent) return;
+    const availW = Math.max(120, parent.clientWidth);
+    let next = availW / W;
+    if (fitHeight) {
+      const top = box.getBoundingClientRect().top;
+      const availH = Math.max(320, window.innerHeight - Math.max(0, top) - 6);
+      next = Math.min(next, availH / H);
+    }
+    s = Math.min(next, 1.6);
+    stage.style.transform = 'scale(' + s + ')';
+    box.style.width = Math.round(W * s) + 'px';
+    box.style.height = Math.round(H * s) + 'px';
+    onScale?.(s);
+  };
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null;
+  if (box.parentElement) ro?.observe(box.parentElement);
+  window.addEventListener('resize', apply);
+  apply();
+  requestAnimationFrame(apply);
+  return { destroy() { ro?.disconnect(); window.removeEventListener('resize', apply); }, scale: () => s, refresh: apply };
 }
